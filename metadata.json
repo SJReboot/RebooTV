@@ -1,0 +1,5 @@
+{
+  "name": "RebooTV",
+  "description": "A modern, fast, and efficient IPTV player with a dark theme, built with Angular and Tailwind CSS. This applet provides a frontend interface for browsing channels, categories, and EPG data.",
+  "requestFramePermissions": []
+}
