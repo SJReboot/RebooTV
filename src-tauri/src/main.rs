@@ -23,12 +23,18 @@ fn add_playlist(url: String) -> Result<(), String> {
 Ok(())
 }
 
+#[tauri::command]
+fn remove_playlist(id: String) -> Result<(), String> {
+Ok(())
+}
+
 fn main() {
 tauri::Builder::default()
 .invoke_handler(tauri::generate_handler![
 get_playlists,
 save_settings,
-add_playlist
+add_playlist,
+remove_playlist
 ])
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
