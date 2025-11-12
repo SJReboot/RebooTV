@@ -7,6 +7,45 @@ windows_subsystem = "windows"
 )]
 
 use serde_json::{json, Value};
+use tauri::api::path::app_data_dir;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppSettings {
+    default_view: String,
+    refresh_on_start: bool,
+    minimize_to_tray: bool,
+    exit_to_tray: bool,
+    mpv_params: String,
+    start_volume: u32,
+    hw_accel: bool,
+    buffer_size: String,
+    epg_time_offset: i32,
+    epg_refresh_frequency: u32,
+}
+
+// (This function goes outside of `main`)
+fn get_db_connection(app: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
+    let config = app.config();
+    let path = app_data_dir(&config)
+        .ok_or_else(|| "Failed to get app data directory".to_string())?
+        .join("rebootv.db");
+    rusqlite::Connection::open(path)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn initialize_database(app: tauri::AppHandle) -> Result<(), String> {
+    let conn = get_db_connection(&app)?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            key     TEXT PRIMARY KEY,
+            value   TEXT
+        )",
+        [],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 // Learn more about Tauri commands at
 // https://tauri.app/v1/guides/features/command
@@ -22,12 +61,31 @@ fn schedule_notification(payload: Value) -> Result<(), String> {
 }
 // From settings.service.ts
 #[tauri::command]
-fn get_settings() -> Result<Value, String> {
-    // Return a null JSON value to indicate no settings saved
-    Ok(json!(null))
+fn get_settings(app: tauri::AppHandle) -> Result<Option<AppSettings>, String> {
+    let conn = get_db_connection(&app)?;
+    let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = 'app_settings'")
+        .map_err(|e| e.to_string())?;
+
+    match stmt.query_row([], |row| row.get::<_, String>(0)) {
+        Ok(json_value) => {
+            let settings: AppSettings = serde_json::from_str(&json_value)
+                .map_err(|e| e.to_string())?;
+            Ok(Some(settings))
+        },
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 #[tauri::command]
-fn save_settings(settings: Value) -> Result<(), String> {
+fn save_settings(settings: AppSettings, app: tauri::AppHandle) -> Result<(), String> {
+    let conn = get_db_connection(&app)?;
+    let json_value = serde_json::to_string(&settings)
+        .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('app_settings', ?1)",
+        rusqlite::params![json_value],
+    ).map_err(|e| e.to_string())?;
     Ok(())
 }
 // From iptv.service.ts
@@ -115,6 +173,7 @@ fn batch_update_channel_favorite_status(ids: Value, is_favorite: Value) -> Resul
 fn main() {
 tauri::Builder::default()
 .invoke_handler(tauri::generate_handler![
+    initialize_database,
     get_playlists,
     schedule_notification,
     get_settings,
