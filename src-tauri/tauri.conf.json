@@ -8,15 +8,7 @@
   },
   "tauri": {
     "bundle": {
-      "identifier": "com.rebootv.app",
-      "protocols": [
-        {
-          "name": "iptvplayer",
-          "schemes": [
-            "iptvplayer"
-          ]
-        }
-      ]
+      "identifier": "com.rebootv.app"
     },
     "allowlist": {
       "notification": {
