@@ -168,6 +168,8 @@ export class IptvService {
   async init() {
     this.isInitializing.set(true);
     try {
+        await this.tauriService.invoke('initialize_database');
+      
         await this.settingsService.loadSettings();
         const playlists = await this.tauriService.invoke<Playlist[]>('get_playlists');
         this.playlists.set(playlists);
