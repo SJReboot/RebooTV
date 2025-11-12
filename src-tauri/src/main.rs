@@ -20,9 +20,10 @@ fn get_playlists() -> Result<Value, String> {
 fn schedule_notification(payload: Value) -> Result<(), String> {
     Ok(())
 }
-// For settings.service.ts (inferred)
+// From settings.service.ts
 #[tauri::command]
 fn get_settings() -> Result<Value, String> {
+    // Return a null JSON value to indicate no settings saved
     Ok(json!(null))
 }
 #[tauri::command]
