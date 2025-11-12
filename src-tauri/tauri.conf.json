@@ -1,0 +1,43 @@
+{
+  "build": {
+    "devPath": "http://localhost:4200",
+    "distDir": "../dist/rebootv/browser"
+  },
+  "package": {
+    "productName": "RebooTV"
+  },
+  "tauri": {
+    "bundle": {
+      "identifier": "com.rebootv.app",
+      "protocols": [
+        {
+          "name": "iptvplayer",
+          "schemes": [
+            "iptvplayer"
+          ]
+        }
+      ]
+    },
+    "allowlist": {
+      "notification": {
+        "all": true
+      },
+      "dialog": {
+        "all": true
+      },
+      "protocol": {
+        "all": true
+      },
+      "shell": {
+        "all": false,
+        "sidecar": true
+      },
+      "fs": {
+        "all": true
+      },
+      "http": {
+        "all": true
+      }
+    }
+  }
+}

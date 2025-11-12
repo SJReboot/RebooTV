@@ -3,17 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "description": "A modern, fast, and efficient IPTV player with a dark theme, built with Angular and Tailwind CSS.",
-  "scripts": {},
+  "scripts": {
+    "tauri": "tauri"
+  },
   "dependencies": {
+    "@angular/build": "^20.3.0",
+    "@angular/cli": "^20.3.0",
     "@angular/common": "^20.3.0",
     "@angular/compiler": "^20.3.0",
+    "@angular/compiler-cli": "^20.3.0",
     "@angular/core": "^20.3.0",
     "@angular/forms": "^20.3.7",
     "@angular/platform-browser": "^20.3.0",
+    "@tauri-apps/api": "^2.9.0",
     "rxjs": "^7.8.2",
-    "@angular/build": "^20.3.0",
-    "@angular/cli": "^20.3.0",
-    "@angular/compiler-cli": "^20.3.0",
     "tailwindcss": "latest"
   },
   "devDependencies": {
