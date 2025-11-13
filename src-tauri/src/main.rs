@@ -8,7 +8,8 @@ windows_subsystem = "windows"
 
 use serde_json::{json, Value};
 use tauri::api::path::app_data_dir;
-use rusqlite::Row;
+use rusqlite::{Result, Row};
+use std::collections::HashMap;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +66,61 @@ struct Category {
     playlist_id: i64,
     name: String,
     is_hidden: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct EpgEntry {
+    id: i64, // Based on TypeScript 'number'
+    title: String,
+    description: Option<String>,
+    start_time: String, // ISO string
+    end_time: String,   // ISO string
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Channel {
+    id: i64,
+    playlist_id: i64,
+    name: String,
+    logo_url: String,
+    stream_url: String,
+    epg: Vec<EpgEntry>, // This will be populated by our smart query
+    category: String,
+    category_id: i64,
+    is_favorite: bool,
+    is_hidden: bool,
+}
+
+#[derive(serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct FetchOptions {
+    page: i64,
+    page_size: i64,
+    search_term: String,
+    sort_by: String,
+    sort_order: String, // "asc" | "desc"
+    filter: serde_json::Value, // Will be complex JSON
+    show_hidden: Option<bool>,
+}
+
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct PaginatedResponse<T> {
+    items: Vec<T>,
+    has_more: bool,
+    total: i64,
+}
+
+fn map_row_to_epg_entry(row: &Row) -> Result<EpgEntry> {
+    Ok(EpgEntry {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        description: row.get(2)?,
+        start_time: row.get(3)?,
+        end_time: row.get(4)?,
+    })
 }
 
 fn map_row_to_category(row: &Row) -> rusqlite::Result<Category> {
@@ -149,6 +205,38 @@ fn initialize_database(app: tauri::AppHandle) -> Result<(), String> {
         [],
     ).map_err(|e| e.to_string())?;
     // ---
+
+    // --- ADD THIS ---
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS channels (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            playlist_id   INTEGER NOT NULL,
+            name          TEXT NOT NULL,
+            logo_url      TEXT,
+            stream_url    TEXT NOT NULL,
+            category      TEXT,
+            category_id   INTEGER,
+            is_favorite   BOOLEAN NOT NULL DEFAULT false,
+            is_hidden     BOOLEAN NOT NULL DEFAULT false,
+            FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+            FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET NULL
+        )",
+        [],
+    ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS epg_entries (
+            id            INTEGER PRIMARY KEY, -- From provider
+            channel_id    INTEGER NOT NULL,
+            title         TEXT NOT NULL,
+            description   TEXT,
+            start_time    TEXT NOT NULL, -- ISO 8601 string
+            end_time      TEXT NOT NULL, -- ISO 8601 string
+            FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE
+        )",
+        [],
+    ).map_err(|e| e.to_string())?;
+    // ---
     Ok(())
 }
 
@@ -208,8 +296,100 @@ fn refresh_all_playlists() -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-fn get_channels(options: Value) -> Result<Value, String> {
-    Ok(json!({ "items": [], "hasMore": false, "total": 0 }))
+fn get_channels(options: FetchOptions, app: tauri::AppHandle) -> Result<PaginatedResponse<Channel>, String> {
+    let conn = get_db_connection(&app)?;
+
+    // For now, we will implement simple pagination.
+    // We will ignore filter/search/sort for this task.
+    let page = options.page.max(1);
+    let page_size = options.page_size;
+    let offset = (page - 1) * page_size;
+
+    // 1. Get the total count of channels
+    let total_items: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM channels",
+        [],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+
+    // 2. Get the paginated list of channels
+    let mut stmt = conn.prepare(
+        "SELECT id, playlist_id, name, logo_url, stream_url, category, category_id, is_favorite, is_hidden
+         FROM channels LIMIT ?1 OFFSET ?2"
+    ).map_err(|e| e.to_string())?;
+
+    let channel_ids: Vec<i64> = stmt.query_map(rusqlite::params![page_size, offset], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<i64>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    if channel_ids.is_empty() {
+        return Ok(PaginatedResponse {
+            items: vec![],
+            has_more: false,
+            total: total_items,
+        });
+    }
+
+    // 3. Get all EPG entries for *only* the channels on this page
+    let ids_params: Vec<rusqlite::types::Value> = channel_ids.iter().map(|&id| id.into()).collect();
+    let mut epg_map: HashMap<i64, Vec<EpgEntry>> = HashMap::new();
+
+    let epg_sql = format!(
+        "SELECT channel_id, id, title, description, start_time, end_time
+         FROM epg_entries WHERE channel_id IN ({})",
+        channel_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+    );
+
+    let mut epg_stmt = conn.prepare(&epg_sql).map_err(|e| e.to_string())?;
+    let epg_rows = epg_stmt.query_map(rusqlite::params_from_iter(ids_params.clone()), |row| {
+        let channel_id: i64 = row.get(0)?;
+        let epg_entry = EpgEntry {
+            id: row.get(1)?,
+            title: row.get(2)?,
+            description: row.get(3)?,
+            start_time: row.get(4)?,
+            end_time: row.get(5)?,
+        };
+        Ok((channel_id, epg_entry))
+    }).map_err(|e| e.to_string())?;
+
+    for row in epg_rows {
+        let (channel_id, epg_entry) = row.map_err(|e| e.to_string())?;
+        epg_map.entry(channel_id).or_default().push(epg_entry);
+    }
+
+    // 4. Re-fetch channels and combine them with their EPG data
+    let channel_sql = format!(
+        "SELECT id, playlist_id, name, logo_url, stream_url, category, category_id, is_favorite, is_hidden
+         FROM channels WHERE id IN ({})",
+        channel_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+    );
+    let mut final_stmt = conn.prepare(&channel_sql).map_err(|e| e.to_string())?;
+
+    let channels_with_epg = final_stmt.query_map(rusqlite::params_from_iter(ids_params), |row| {
+        let channel_id: i64 = row.get(0)?;
+        Ok(Channel {
+            id: channel_id,
+            playlist_id: row.get(1)?,
+            name: row.get(2)?,
+            logo_url: row.get(3)?,
+            stream_url: row.get(4)?,
+            epg: epg_map.remove(&channel_id).unwrap_or_default(), // Attach EPG data
+            category: row.get(5)?,
+            category_id: row.get(6)?,
+            is_favorite: row.get(7)?,
+            is_hidden: row.get(8)?,
+        })
+    }).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<Channel>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(PaginatedResponse {
+        items: channels_with_epg,
+        has_more: (page * page_size) < total_items,
+        total: total_items,
+    })
 }
 #[tauri::command]
 fn get_movies(options: Value) -> Result<Value, String> {
@@ -368,11 +548,13 @@ fn batch_update_category_visibility(ids: Vec<i64>, is_hidden: bool, app: tauri::
     Ok(categories)
 }
 #[tauri::command]
-fn toggle_channel_favorite(id: Value) -> Result<Value, String> {
-    Ok(json!(null))
+fn toggle_channel_favorite(id: i64, app: tauri::AppHandle) -> Result<Channel, String> {
+    // TODO: Implement real logic
+    Err("Not implemented".to_string())
 }
 #[tauri::command]
-fn add_to_recently_watched(channel_id: Value) -> Result<(), String> {
+fn add_to_recently_watched(channel_id: i64, app: tauri::AppHandle) -> Result<(), String> {
+    // TODO: Implement real logic
     Ok(())
 }
 #[tauri::command]
@@ -384,16 +566,19 @@ fn toggle_vod_favorite(id: Value, r#type: Value) -> Result<Value, String> {
     Ok(json!(null))
 }
 #[tauri::command]
-fn toggle_channel_visibility(id: Value) -> Result<Value, String> {
-    Ok(json!(null))
+fn toggle_channel_visibility(id: i64, app: tauri::AppHandle) -> Result<Channel, String> {
+    // TODO: Implement real logic
+    Err("Not implemented".to_string())
 }
 #[tauri::command]
-fn batch_update_channel_visibility(ids: Value, is_hidden: Value) -> Result<Value, String> {
-    Ok(json!([]))
+fn batch_update_channel_visibility(ids: Vec<i64>, is_hidden: bool, app: tauri::AppHandle) -> Result<Vec<Channel>, String> {
+    // TODO: Implement real logic
+    Ok(vec![])
 }
 #[tauri::command]
-fn batch_update_channel_favorite_status(ids: Value, is_favorite: Value) -> Result<Value, String> {
-    Ok(json!([]))
+fn batch_update_channel_favorite_status(ids: Vec<i64>, is_favorite: bool, app: tauri::AppHandle) -> Result<Vec<Channel>, String> {
+    // TODO: Implement real logic
+    Ok(vec![])
 }
 
 fn main() {
