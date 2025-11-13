@@ -20,6 +20,8 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 reqwest = { version = "0.12.5", features = ["json"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 tokio = { version = "1.38.0", features = ["full"] }
+quick-xml = { version = "0.36.0", features = ["serialize", "tokio"] }
+crc32fast = "1.4.0"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem
