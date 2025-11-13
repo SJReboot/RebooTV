@@ -11,6 +11,8 @@ use tauri::api::path::app_data_dir;
 use rusqlite::{Result, Row};
 use std::collections::HashMap;
 use tauri::api::process::Command;
+use tokio;
+use reqwest::Client;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,6 +133,30 @@ fn map_row_to_category(row: &Row) -> rusqlite::Result<Category> {
         name: row.get(2)?,
         is_hidden: row.get(3)?,
     })
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct XtreamCategory {
+    category_id: String,
+    category_name: String,
+}
+#[derive(serde::Deserialize, Debug)]
+struct XtreamLiveStream {
+    stream_id: i64,
+    name: String,
+    stream_icon: String,
+    category_id: String,
+    // This field is often a string, but we'll parse it
+    epg_channel_id: Option<String>,
+}
+
+fn update_playlist_status(conn: &rusqlite::Connection, playlist_id: i64, status: &str, error_message: Option<String>) -> Result<(), String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE playlists SET status = ?1, last_updated = ?2, error_message = ?3 WHERE id = ?4",
+        rusqlite::params![status, now, error_message, playlist_id],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn map_row_to_playlist(row: &Row) -> rusqlite::Result<Playlist> {
@@ -293,7 +319,19 @@ fn save_settings(settings: AppSettings, app: tauri::AppHandle) -> Result<(), Str
 }
 // From iptv.service.ts
 #[tauri::command]
-fn refresh_all_playlists() -> Result<(), String> {
+async fn refresh_all_playlists(app: tauri::AppHandle) -> Result<(), String> {
+    let conn = get_db_connection(&app)?;
+    let playlist_ids: Vec<i64> = conn.prepare("SELECT id FROM playlists WHERE is_active = true").map_err(|e| e.to_string())?
+        .query_map([], |row| row.get(0)).map_err(|e| e.to_string())?
+        .collect::<Result<Vec<i64>, _>>().map_err(|e| e.to_string())?;
+    for id in playlist_ids {
+        let app_clone = app.clone();
+        // We spawn a new task for each refresh so they can run in parallel
+        // We ignore the result, as the function updates the status in the DB
+        tokio::spawn(async move {
+            let _ = refresh_playlist(id, app_clone).await;
+        });
+    }
     Ok(())
 }
 #[tauri::command]
@@ -486,7 +524,81 @@ fn update_playlist_active_status(id: i64, is_active: bool, app: tauri::AppHandle
     Ok(updated_playlist)
 }
 #[tauri::command]
-fn refresh_playlist(id: Value) -> Result<(), String> {
+async fn refresh_playlist(playlist_id: i64, app: tauri::AppHandle) -> Result<(), String> {
+    let mut conn = get_db_connection(&app)?;
+    // 1. Get playlist credentials from DB
+    let (base_url, username, password) = conn.query_row(
+        "SELECT url, username, password FROM playlists WHERE id = ?1",
+        [playlist_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Option<String>>(2)?))
+    ).map_err(|e| e.to_string())?;
+    let (username, password) = match (username, password) {
+        (Some(u), Some(p)) => (u, p),
+        _ => return Err("Playlist is missing username or password".to_string()),
+    };
+    // Set status to "loading"
+    update_playlist_status(&conn, playlist_id, "loading", None)?;
+    let client = Client::new();
+    let player_api_url = format!("{}player_api.php?username={}&password={}", base_url, username, password);
+    // 2. Fetch Categories
+    let categories_url = format!("{}&action=get_live_categories", player_api_url);
+    let categories = match client.get(&categories_url).send().await {
+        Ok(resp) => resp.json::<Vec<XtreamCategory>>().await.map_err(|e| e.to_string())?,
+        Err(e) => {
+            update_playlist_status(&conn, playlist_id, "error", Some(e.to_string()))?;
+            return Err(e.to_string());
+        }
+    };
+    // 3. Fetch Live Streams
+    let streams_url = format!("{}&action=get_live_streams", player_api_url);
+    let streams = match client.get(&streams_url).send().await {
+        Ok(resp) => resp.json::<Vec<XtreamLiveStream>>().await.map_err(|e| e.to_string())?,
+        Err(e) => {
+            update_playlist_status(&conn, playlist_id, "error", Some(e.to_string()))?;
+            return Err(e.to_string());
+        }
+    };
+    // 4. Start a database transaction
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // 5. Clear old data for this playlist
+    tx.execute("DELETE FROM categories WHERE playlist_id = ?1", [playlist_id]).map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM channels WHERE playlist_id = ?1", [playlist_id]).map_err(|e| e.to_string())?;
+    // 6. Insert new categories
+    { // Block to limit scope of prepared statement
+        let mut cat_stmt = tx.prepare("INSERT INTO categories (playlist_id, name, is_hidden) VALUES (?1, ?2, false)").map_err(|e| e.to_string())?;
+        for cat in &categories {
+            cat_stmt.execute(rusqlite::params![playlist_id, cat.category_name]).map_err(|e| e.to_string())?;
+        }
+    } // cat_stmt is dropped here
+    // 7. Insert new channels
+    {
+        let mut chan_stmt = tx.prepare(
+            "INSERT INTO channels (playlist_id, id, name, logo_url, stream_url, category_id, category, is_favorite, is_hidden)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, false, false)"
+        ).map_err(|e| e.to_string())?;
+        for stream in &streams {
+            let category_id_num = stream.category_id.parse::<i64>().unwrap_or(-1);
+            let category_name = categories.iter()
+                .find(|c| c.category_id == stream.category_id)
+                .map_or("Uncategorized", |c| &c.category_name);
+
+            let stream_url = format!("{}{}/{}/{}", base_url, username, password, stream.stream_id);
+            chan_stmt.execute(rusqlite::params![
+                playlist_id,
+                stream.stream_id,
+                stream.name,
+                stream.stream_icon,
+                stream_url,
+                category_id_num,
+                category_name
+            ]).map_err(|e| e.to_string())?;
+        }
+    } // chan_stmt is dropped here
+    // 8. Commit the transaction
+    tx.commit().map_err(|e| e.to_string())?;
+    // 9. Set status to "active"
+    update_playlist_status(&conn, playlist_id, "active", None)?;
     Ok(())
 }
 #[tauri::command]
