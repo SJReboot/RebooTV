@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use tauri::api::process::Command;
 use tokio;
 use reqwest::Client;
+use quick_xml::de::from_reader;
+use crc32fast;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +100,7 @@ struct Channel {
 
 #[derive(serde::Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct FetchOptions {
     page: i64,
     page_size: i64,
@@ -116,14 +119,32 @@ struct PaginatedResponse<T> {
     total: i64,
 }
 
-fn map_row_to_epg_entry(row: &Row) -> Result<EpgEntry> {
-    Ok(EpgEntry {
-        id: row.get(0)?,
-        title: row.get(1)?,
-        description: row.get(2)?,
-        start_time: row.get(3)?,
-        end_time: row.get(4)?,
-    })
+#[derive(serde::Deserialize, Debug)]
+struct Tv {
+    // We only care about the 'programme' tags
+    #[serde(rename = "programme", default)]
+    programmes: Vec<Programme>,
+}
+#[derive(serde::Deserialize, Debug)]
+struct Programme {
+    #[serde(rename = "@start")]
+    start: String,
+    #[serde(rename = "@stop")]
+    stop: String,
+    #[serde(rename = "@channel")]
+    channel: String, // This is the epg_channel_id
+    title: Title,
+    desc: Option<Desc>,
+}
+#[derive(serde::Deserialize, Debug)]
+struct Title {
+    #[serde(rename = "$value")]
+    value: String,
+}
+#[derive(serde::Deserialize, Debug)]
+struct Desc {
+    #[serde(rename = "$value")]
+    value: String,
 }
 
 fn map_row_to_category(row: &Row) -> rusqlite::Result<Category> {
@@ -286,7 +307,7 @@ fn get_playlists(app: tauri::AppHandle) -> Result<Vec<Playlist>, String> {
 
 // From tauri.service.ts
 #[tauri::command]
-fn schedule_notification(payload: Value) -> Result<(), String> {
+fn schedule_notification(_payload: Value) -> Result<(), String> {
     Ok(())
 }
 // From settings.service.ts
@@ -432,15 +453,15 @@ fn get_channels(options: FetchOptions, app: tauri::AppHandle) -> Result<Paginate
     })
 }
 #[tauri::command]
-fn get_movies(options: Value) -> Result<Value, String> {
+fn get_movies(_options: Value) -> Result<Value, String> {
     Ok(json!({ "items": [], "hasMore": false, "total": 0 }))
 }
 #[tauri::command]
-fn get_series(options: Value) -> Result<Value, String> {
+fn get_series(_options: Value) -> Result<Value, String> {
     Ok(json!({ "items": [], "hasMore": false, "total": 0 }))
 }
 #[tauri::command]
-fn get_seasons_for_series(series_id: Value) -> Result<Value, String> {
+fn get_seasons_for_series(_series_id: Value) -> Result<Value, String> {
     Ok(json!([]))
 }
 #[tauri::command]
@@ -663,41 +684,43 @@ fn batch_update_category_visibility(ids: Vec<i64>, is_hidden: bool, app: tauri::
     Ok(categories)
 }
 #[tauri::command]
-fn toggle_channel_favorite(id: i64, app: tauri::AppHandle) -> Result<Channel, String> {
+fn toggle_channel_favorite(_id: i64, _app: tauri::AppHandle) -> Result<Channel, String> {
     // TODO: Implement real logic
     Err("Not implemented".to_string())
 }
 #[tauri::command]
-fn add_to_recently_watched(channel_id: i64, app: tauri::AppHandle) -> Result<(), String> {
+fn add_to_recently_watched(_channel_id: i64, _app: tauri::AppHandle) -> Result<(), String> {
     // TODO: Implement real logic
     Ok(())
 }
 #[tauri::command]
+#[allow(unused_variables)]
 fn toggle_vod_watchlist(id: Value, r#type: Value) -> Result<Value, String> {
     Ok(json!(null))
 }
 #[tauri::command]
+#[allow(unused_variables)]
 fn toggle_vod_favorite(id: Value, r#type: Value) -> Result<Value, String> {
     Ok(json!(null))
 }
 #[tauri::command]
-fn toggle_channel_visibility(id: i64, app: tauri::AppHandle) -> Result<Channel, String> {
+fn toggle_channel_visibility(_id: i64, _app: tauri::AppHandle) -> Result<Channel, String> {
     // TODO: Implement real logic
     Err("Not implemented".to_string())
 }
 #[tauri::command]
-fn batch_update_channel_visibility(ids: Vec<i64>, is_hidden: bool, app: tauri::AppHandle) -> Result<Vec<Channel>, String> {
+fn batch_update_channel_visibility(_ids: Vec<i64>, _is_hidden: bool, _app: tauri::AppHandle) -> Result<Vec<Channel>, String> {
     // TODO: Implement real logic
     Ok(vec![])
 }
 #[tauri::command]
-fn batch_update_channel_favorite_status(ids: Vec<i64>, is_favorite: bool, app: tauri::AppHandle) -> Result<Vec<Channel>, String> {
+fn batch_update_channel_favorite_status(_ids: Vec<i64>, _is_favorite: bool, _app: tauri::AppHandle) -> Result<Vec<Channel>, String> {
     // TODO: Implement real logic
     Ok(vec![])
 }
 
 #[tauri::command]
-fn play_stream(url: String, app: tauri::AppHandle) -> Result<(), String> {
+fn play_stream(url: String, _app: tauri::AppHandle) -> Result<(), String> {
     // "mpv" is the name of the binary *without* the .exe extension
     // Tauri's sidecar API finds it based on the `externalBin` config.
     let _child = Command::new_sidecar("mpv")
@@ -708,36 +731,114 @@ fn play_stream(url: String, app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+#[tokio::main]
+async fn refresh_epg(app: tauri::AppHandle) -> Result<(), String> {
+    let mut conn = get_db_connection(&app)?;
+    // 1. Get all active Xtream playlists
+    let playlists_creds = conn.prepare(
+        "SELECT id, url, username, password FROM playlists WHERE is_active = true AND type = 'xtream'"
+    ).map_err(|e| e.to_string())?
+    .query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?
+        ))
+    }).map_err(|e| e.to_string())?
+    .collect::<Result<Vec<(i64, String, Option<String>, Option<String>)>, _>>().map_err(|e| e.to_string())?;
+
+    let client = Client::new();
+    // 2. Clear all old EPG data from the database
+    conn.execute("DELETE FROM epg_entries", []).map_err(|e| e.to_string())?;
+
+    for (playlist_id, base_url, username_opt, password_opt) in playlists_creds {
+        let (username, password) = match (username_opt, password_opt) {
+            (Some(u), Some(p)) => (u, p),
+            _ => continue, // Skip if no credentials
+        };
+        // 3. Get a map of our internal channel ID -> provider's EPG ID
+        let mut epg_id_map: HashMap<String, i64> = HashMap::new();
+        conn.prepare("SELECT epg_channel_id, id FROM channels WHERE playlist_id = ?1 AND epg_channel_id IS NOT NULL").map_err(|e| e.to_string())?
+            .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?))).map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .for_each(|(epg_id, channel_id)| {
+                epg_id_map.insert(epg_id, channel_id);
+            });
+        if epg_id_map.is_empty() {
+            continue; // No channels with EPG IDs for this playlist
+        }
+        // 4. Fetch the XMLTV EPG data
+        let epg_url = format!("{}xmltv.php?username={}&password={}", base_url, username, password);
+
+        let epg_xml_bytes = match client.get(&epg_url).send().await {
+            Ok(resp) => resp.bytes().await.map_err(|e| e.to_string())?,
+            Err(_) => continue, // Skip this playlist on error
+        };
+        // 5. Parse the XML
+        let tv_data: Tv = match from_reader(epg_xml_bytes.as_ref()) {
+            Ok(data) => data,
+            Err(_) => continue, // Skip on XML parsing error
+        };
+        // 6. Insert new EPG data in a transaction
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        {
+            let mut epg_stmt = tx.prepare(
+                "INSERT OR IGNORE INTO epg_entries (id, channel_id, title, description, start_time, end_time)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+            ).map_err(|e| e.to_string())?;
+            for programme in tv_data.programmes {
+                if let Some(internal_channel_id) = epg_id_map.get(&programme.channel) {
+                    let entry_id = format!("{}-{}-{}", programme.channel, programme.start, programme.title.value);
+                    let entry_hash_id = i64::from(crc32fast::hash(entry_id.as_bytes()));
+                    epg_stmt.execute(rusqlite::params![
+                        entry_hash_id,
+                        internal_channel_id,
+                        programme.title.value,
+                        programme.desc.map(|d| d.value),
+                        programme.start,
+                        programme.stop
+                    ]).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
-tauri::Builder::default()
-.invoke_handler(tauri::generate_handler![
-    initialize_database,
-    get_playlists,
-    schedule_notification,
-    get_settings,
-    save_settings,
-    refresh_all_playlists,
-    get_channels,
-    get_movies,
-    get_series,
-    get_seasons_for_series,
-    get_categories,
-    add_playlist,
-    update_playlist,
-    delete_playlist,
-    update_playlist_active_status,
-    refresh_playlist,
-    toggle_category_visibility,
-    batch_update_category_visibility,
-    toggle_channel_favorite,
-    add_to_recently_watched,
-    toggle_vod_watchlist,
-    toggle_vod_favorite,
-    toggle_channel_visibility,
-    batch_update_channel_visibility,
-    batch_update_channel_favorite_status,
-    play_stream
-])
-.run(tauri::generate_context!())
-.expect("error while running tauri application");
+    tauri::Builder::default()
+    .invoke_handler(tauri::generate_handler![
+        initialize_database,
+        get_playlists,
+        schedule_notification,
+        get_settings,
+        save_settings,
+        refresh_all_playlists,
+        get_channels,
+        get_movies,
+        get_series,
+        get_seasons_for_series,
+        get_categories,
+        add_playlist,
+        update_playlist,
+        delete_playlist,
+        update_playlist_active_status,
+        refresh_playlist,
+        toggle_category_visibility,
+        batch_update_category_visibility,
+        toggle_channel_favorite,
+        add_to_recently_watched,
+        toggle_vod_watchlist,
+        toggle_vod_favorite,
+        toggle_channel_visibility,
+        batch_update_channel_visibility,
+        batch_update_channel_favorite_status,
+        play_stream,
+        refresh_epg
+    ])
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
 }
