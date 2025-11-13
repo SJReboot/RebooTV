@@ -243,6 +243,7 @@ fn initialize_database(app: tauri::AppHandle) -> Result<(), String> {
             stream_url    TEXT NOT NULL,
             category      TEXT,
             category_id   INTEGER,
+            epg_channel_id TEXT,
             is_favorite   BOOLEAN NOT NULL DEFAULT false,
             is_hidden     BOOLEAN NOT NULL DEFAULT false,
             FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
@@ -574,8 +575,8 @@ async fn refresh_playlist(playlist_id: i64, app: tauri::AppHandle) -> Result<(),
     // 7. Insert new channels
     {
         let mut chan_stmt = tx.prepare(
-            "INSERT INTO channels (playlist_id, id, name, logo_url, stream_url, category_id, category, is_favorite, is_hidden)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, false, false)"
+            "INSERT INTO channels (playlist_id, id, name, logo_url, stream_url, category_id, category, epg_channel_id, is_favorite, is_hidden)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, false, false)"
         ).map_err(|e| e.to_string())?;
         for stream in &streams {
             let category_id_num = stream.category_id.parse::<i64>().unwrap_or(-1);
@@ -591,7 +592,8 @@ async fn refresh_playlist(playlist_id: i64, app: tauri::AppHandle) -> Result<(),
                 stream.stream_icon,
                 stream_url,
                 category_id_num,
-                category_name
+                category_name,
+                stream.epg_channel_id.as_deref() // Add this
             ]).map_err(|e| e.to_string())?;
         }
     } // chan_stmt is dropped here
