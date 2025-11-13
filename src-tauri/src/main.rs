@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use tauri::api::path::app_data_dir;
 use rusqlite::{Result, Row};
 use std::collections::HashMap;
+use tauri::api::process::Command;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -581,6 +582,18 @@ fn batch_update_channel_favorite_status(ids: Vec<i64>, is_favorite: bool, app: t
     Ok(vec![])
 }
 
+#[tauri::command]
+fn play_stream(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    // "mpv" is the name of the binary *without* the .exe extension
+    // Tauri's sidecar API finds it based on the `externalBin` config.
+    let _child = Command::new_sidecar("mpv")
+        .map_err(|e| e.to_string())?
+        .args([url]) // Pass the URL as an argument to mpv
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
 tauri::Builder::default()
 .invoke_handler(tauri::generate_handler![
@@ -608,7 +621,8 @@ tauri::Builder::default()
     toggle_vod_favorite,
     toggle_channel_visibility,
     batch_update_channel_visibility,
-    batch_update_channel_favorite_status
+    batch_update_channel_favorite_status,
+    play_stream
 ])
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
