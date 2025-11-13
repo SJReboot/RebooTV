@@ -178,6 +178,7 @@ export class IptvService {
             // This is now a fire-and-forget call. The loading screen will persist
             // until the 'refresh-complete' event is received.
             this.tauriService.invoke('refresh_all_playlists');
+            this.tauriService.invoke('refresh_epg');
         } else {
             // No active playlists to refresh, so initialization is done.
             this.isFirstRefresh = false;
