@@ -58,6 +58,24 @@ struct NewPlaylistData {
     last_updated: Option<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Category {
+    id: i64,
+    playlist_id: i64,
+    name: String,
+    is_hidden: bool,
+}
+
+fn map_row_to_category(row: &Row) -> rusqlite::Result<Category> {
+    Ok(Category {
+        id: row.get(0)?,
+        playlist_id: row.get(1)?,
+        name: row.get(2)?,
+        is_hidden: row.get(3)?,
+    })
+}
+
 fn map_row_to_playlist(row: &Row) -> rusqlite::Result<Playlist> {
     Ok(Playlist {
         id: row.get(0)?,
@@ -114,6 +132,19 @@ fn initialize_database(app: tauri::AppHandle) -> Result<(), String> {
             max_connections   INTEGER,
             expiration_date   TEXT,
             last_updated      TEXT
+        )",
+        [],
+    ).map_err(|e| e.to_string())?;
+    // ---
+
+    // --- ADD THIS ---
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS categories (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            playlist_id   INTEGER NOT NULL,
+            name          TEXT NOT NULL,
+            is_hidden     BOOLEAN NOT NULL DEFAULT false,
+            FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
         )",
         [],
     ).map_err(|e| e.to_string())?;
@@ -193,8 +224,17 @@ fn get_seasons_for_series(series_id: Value) -> Result<Value, String> {
     Ok(json!([]))
 }
 #[tauri::command]
-fn get_categories() -> Result<Value, String> {
-    Ok(json!([]))
+fn get_categories(app: tauri::AppHandle) -> Result<Vec<Category>, String> {
+    let conn = get_db_connection(&app)?;
+    let mut stmt = conn.prepare("SELECT * FROM categories")
+        .map_err(|e| e.to_string())?;
+
+    let categories = stmt.query_map([], map_row_to_category)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<Category>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(categories)
 }
 #[tauri::command]
 fn add_playlist(playlist_data: NewPlaylistData, app: tauri::AppHandle) -> Result<Playlist, String> {
@@ -269,12 +309,63 @@ fn refresh_playlist(id: Value) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-fn toggle_category_visibility(id: Value) -> Result<Value, String> {
-    Ok(json!(null))
+fn toggle_category_visibility(id: i64, app: tauri::AppHandle) -> Result<Category, String> {
+    let conn = get_db_connection(&app)?;
+
+    // First, get the current hidden status
+    let is_hidden: bool = conn.query_row(
+        "SELECT is_hidden FROM categories WHERE id = ?1",
+        [id],
+        |row| row.get(0)
+    ).map_err(|e| e.to_string())?;
+
+    // Toggle it
+    let new_is_hidden = !is_hidden;
+    conn.execute(
+        "UPDATE categories SET is_hidden = ?1 WHERE id = ?2",
+        rusqlite::params![new_is_hidden, id],
+    ).map_err(|e| e.to_string())?;
+
+    // Fetch and return the updated category
+    let mut stmt = conn.prepare("SELECT * FROM categories WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    let updated_category = stmt.query_row(rusqlite::params![id], map_row_to_category)
+        .map_err(|e| e.to_string())?;
+
+    Ok(updated_category)
 }
 #[tauri::command]
-fn batch_update_category_visibility(ids: Value, is_hidden: Value) -> Result<Value, String> {
-     Ok(json!([]))
+fn batch_update_category_visibility(ids: Vec<i64>, is_hidden: bool, app: tauri::AppHandle) -> Result<Vec<Category>, String> {
+    let conn = get_db_connection(&app)?;
+
+    // Convert Vec<i64> to a format rusqlite can use in a query
+    let ids_params: Vec<rusqlite::types::Value> = ids.iter().map(|&id| id.into()).collect();
+
+    conn.execute(
+        &format!(
+            "UPDATE categories SET is_hidden = ?1 WHERE id IN ({})",
+            ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+        ),
+        rusqlite::params_from_iter(std::iter::once(is_hidden.into()).chain(ids_params)),
+    ).map_err(|e| e.to_string())?;
+
+    // Fetch and return all updated categories
+    let mut stmt = conn.prepare(
+        &format!(
+            "SELECT * FROM categories WHERE id IN ({})",
+            ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+        )
+    ).map_err(|e| e.to_string())?;
+
+    let categories = stmt.query_map(
+            rusqlite::params_from_iter(ids.iter().map(|&id| id as i64)),
+            map_row_to_category
+        )
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<Category>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(categories)
 }
 #[tauri::command]
 fn toggle_channel_favorite(id: Value) -> Result<Value, String> {
