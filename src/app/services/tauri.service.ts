@@ -1,5 +1,5 @@
 import { Injectable, NgZone } from '@angular/core';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { listen, EventCallback, UnlistenFn } from '@tauri-apps/api/event';
 
 @Injectable({

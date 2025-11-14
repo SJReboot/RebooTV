@@ -87,7 +87,7 @@ import { Episode, VODItem } from '../../models/iptv.models';
           </div>
         </div>
       </aside>
-    } @else if (selectedEpisode(); as episode) {
+    } @else if (selectedEpisode()) {
       <aside 
         class="w-full h-full bg-gray-800 border-l border-gray-700/50 flex flex-col">
         <div class="flex flex-col h-full">
@@ -95,14 +95,14 @@ import { Episode, VODItem } from '../../models/iptv.models';
           <div class="p-4 flex-shrink-0">
             <div class="flex items-start justify-between">
               <div class="flex items-start min-w-0">
-                <img [ngSrc]="episode.imageUrl" priority width="160" height="90" [alt]="episode.title + ' thumbnail'" class="rounded-md object-cover w-40 h-[5.625rem] flex-shrink-0 bg-gray-700 shadow-lg">
+                <img [ngSrc]="selectedEpisode()!.imageUrl" priority width="160" height="90" [alt]="selectedEpisode()!.title + ' thumbnail'" class="rounded-md object-cover w-40 h-[5.625rem] flex-shrink-0 bg-gray-700 shadow-lg">
                 <div class="ml-4 mt-1">
                   @if (selectedSeries(); as series) {
                     <h4 class="text-md text-gray-300 truncate leading-tight" [title]="series.title">{{ series.title }}</h4>
                   }
                   @if (selectedSeason(); as season) {
-                    <h3 class="text-lg font-bold text-gray-100 truncate leading-tight" [title]="'S' + season.seasonNumber + 'E' + episode.episodeNumber + ' - ' + episode.title">
-                      S{{season.seasonNumber}}E{{episode.episodeNumber}} - {{ episode.title }}
+                    <h3 class="text-lg font-bold text-gray-100 truncate leading-tight" [title]="'S' + season.seasonNumber + 'E' + selectedEpisode()!.episodeNumber + ' - ' + selectedEpisode()!.title">
+                      S{{season.seasonNumber}}E{{selectedEpisode()!.episodeNumber}} - {{ selectedEpisode()!.title }}
                     </h3>
                   }
                 </div>
@@ -117,7 +117,7 @@ import { Episode, VODItem } from '../../models/iptv.models';
 
           <!-- Actions -->
           <div class="px-4 pt-2 pb-4 flex-shrink-0 flex items-center space-x-4 border-b border-gray-700/50">
-            <button (click)="onPlay(episode)" class="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors">
+            <button (click)="onPlay(selectedEpisode()!)" class="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 mr-2">
                 <path fill-rule="evenodd" d="M4.5 5.653c0-1.426 1.529-2.33 2.779-1.643l11.54 6.647c1.295.742 1.295 2.545 0 3.286L7.279 20.99c-1.25.717-2.779-.217-2.779-1.643V5.653Z" clip-rule="evenodd" />
               </svg>
@@ -127,13 +127,13 @@ import { Episode, VODItem } from '../../models/iptv.models';
 
           <!-- Episode Details -->
           <div class="flex-1 overflow-y-auto p-4 space-y-4">
-             @if (episode.duration) {
+             @if (selectedEpisode()!.duration) {
               <div class="text-sm text-gray-400">
-                <span>{{ formatDuration(episode.duration) }}</span>
+                <span>{{ formatDuration(selectedEpisode()!.duration) }}</span>
               </div>
             }
             <div>
-              <p class="text-sm text-gray-300 leading-relaxed">{{ episode.description }}</p>
+              <p class="text-sm text-gray-300 leading-relaxed">{{ selectedEpisode()!.description }}</p>
             </div>
           </div>
         </div>

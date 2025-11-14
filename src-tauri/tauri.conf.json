@@ -1,34 +1,40 @@
 {
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "build": {
-    "devPath": "http://localhost:4200",
-    "distDir": "../dist/rebootv/browser"
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run start",
+    "devUrl": "http://localhost:4200",
+    "frontendDist": "../dist/rebootv"
   },
-  "package": {
-    "productName": "RebooTV"
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   },
-  "tauri": {
-    "bundle": {
-      "identifier": "com.rebootv.app"
-    },
-    "allowlist": {
-      "notification": {
-        "all": true
-      },
-      "dialog": {
-        "all": true
-      },
-      "protocol": {
-        "all": true
-      },
-      "shell": {
-        "all": false,
-        "sidecar": true
-      },
-      "fs": {
-        "all": true
-      },
-      "http": {
-        "all": true
+  "identifier": "com.rebootv.app",
+  "productName": "rebootv",
+  "version": "1.0.0",
+  "plugins": {
+    "shell": {
+      "open": true,
+      "sidecar": true
+    }
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/**/*",
+          "$RESOURCE/**/*"
+        ]
       }
     }
   }

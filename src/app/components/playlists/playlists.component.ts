@@ -11,6 +11,7 @@ type SortKey = 'default' | 'name-asc' | 'name-desc';
 
 @Component({
   selector: 'app-playlists',
+  standalone: true,
   imports: [CommonModule, PlaylistCardComponent, PlaylistListItemComponent],
   template: `
     @if(isWelcomeScreen()) {

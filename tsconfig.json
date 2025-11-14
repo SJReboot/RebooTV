@@ -7,7 +7,6 @@
     "emitDecoratorMetadata": true,
     "sourceMap": true,
     "noImplicitAny": true,
-    "suppressImplicitAnyIndexErrors": true,
     "strictNullChecks": true,
     "esModuleInterop": true,
     "lib": ["ES2022", "DOM"],
@@ -17,9 +16,6 @@
       "rxjs/*": ["node_modules/rxjs/*"]
     }
   },
-  "files": [
-    "index.tsx"
-  ],
   "include": [
     "src/**/*.ts"
   ]
