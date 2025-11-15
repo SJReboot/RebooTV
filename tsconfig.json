@@ -2,19 +2,16 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "node",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "sourceMap": true,
-    "noImplicitAny": true,
+    "noImplicitAny": false,
     "strictNullChecks": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "lib": ["ES2022", "DOM"],
-    "baseUrl": ".",
-    "paths": {
-      "rxjs": ["node_modules/rxjs"],
-      "rxjs/*": ["node_modules/rxjs/*"]
-    }
+    "baseUrl": "."
   },
   "include": [
     "src/**/*.ts"
