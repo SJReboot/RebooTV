@@ -262,7 +262,7 @@ export class SettingsComponent {
   }
 
   private generateTimeOffsetOptions(): void {
-    const options = [];
+    const options: { value: number; label: string }[] = [];
     for (let minutes = -720; minutes <= 720; minutes += 30) {
       if (minutes === 0) {
         options.push({ value: 0, label: 'None (UTC)' });
