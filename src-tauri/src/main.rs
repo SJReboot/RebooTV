@@ -2,15 +2,15 @@
 // opening on Windows in release,
 // DON'T REMOVE!!
 #![cfg_attr(
-not(debug_assertions),
-windows_subsystem = "windows"
+    not(debug_assertions),
+    windows_subsystem = "windows"
 )]
 
 use serde_json::{json, Value};
-use tauri::api::path::app_data_dir;
 use rusqlite::{Result, Row};
 use std::collections::HashMap;
-use tauri::api::process::Command;
+use tauri::Manager;
+use tauri_plugin_shell::ShellExt; // <-- UPDATED THIS LINE
 use tokio;
 use reqwest::Client;
 use quick_xml::de::from_reader;
@@ -200,9 +200,10 @@ fn map_row_to_playlist(row: &Row) -> rusqlite::Result<Playlist> {
 
 // (This function goes outside of `main`)
 fn get_db_connection(app: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
-    let config = app.config();
-    let path = app_data_dir(&config)
-        .ok_or_else(|| "Failed to get app data directory".to_string())?
+    // --- UPDATED FOR V2 ---
+    let path = app.path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())? // <-- UPDATED: Use map_err for Result
         .join("rebootv.db");
     rusqlite::Connection::open(path)
         .map_err(|e| e.to_string())
@@ -445,7 +446,7 @@ fn get_channels(options: FetchOptions, app: tauri::AppHandle) -> Result<Paginate
     }).map_err(|e| e.to_string())?
     .collect::<Result<Vec<Channel>, _>>()
     .map_err(|e| e.to_string())?;
-
+    
     Ok(PaginatedResponse {
         items: channels_with_epg,
         has_more: (page * page_size) < total_items,
@@ -510,8 +511,8 @@ fn add_playlist(playlist_data: NewPlaylistData, app: tauri::AppHandle) -> Result
 fn update_playlist(playlist: Playlist, app: tauri::AppHandle) -> Result<Playlist, String> {
     let conn = get_db_connection(&app)?;
     conn.execute(
-        "UPDATE playlists SET
-         name = ?1, url = ?2, type = ?3, is_active = ?4, status = ?5, error_message = ?6, username = ?7,
+        "UPDATE playlists SET 
+         name = ?1, url = ?2, type = ?3, is_active = ?4, status = ?5, error_message = ?6, username = ?7, 
          password = ?8, mac_address = ?9, max_connections = ?10, expiration_date = ?11, last_updated = ?12
          WHERE id = ?13",
         rusqlite::params![
@@ -720,10 +721,10 @@ fn batch_update_channel_favorite_status(_ids: Vec<i64>, _is_favorite: bool, _app
 }
 
 #[tauri::command]
-fn play_stream(url: String, _app: tauri::AppHandle) -> Result<(), String> {
-    // "mpv" is the name of the binary *without* the .exe extension
-    // Tauri's sidecar API finds it based on the `externalBin` config.
-    let _child = Command::new_sidecar("mpv")
+fn play_stream(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    // --- UPDATED FOR V2 ---
+    let _child = app.shell() // This uses the `tauri_plugin_shell::ShellExt` trait
+        .sidecar("mpv")
         .map_err(|e| e.to_string())?
         .args([url]) // Pass the URL as an argument to mpv
         .spawn()

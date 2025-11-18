@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 
 /src-tauri/target
+
+# Angular Cache
+.angular/cache
+.angular/
+
+# Tauri Build Artifacts
+src-tauri/gen/

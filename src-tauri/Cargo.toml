@@ -8,15 +8,10 @@ repository = ""
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "2.0.0-beta.18", features = [] }
+# Aligned with JS @tauri-apps/cli
+tauri-build = { version = "2.0.0-beta.20", features = [] }
 
 [dependencies]
-tauri = { version = "2.0.0-beta.21", features = [] }
-tauri-plugin-shell = "2.0.0-beta.8"
-tauri-plugin-dialog = "2.0.0-beta.8"
-tauri-plugin-fs = "2.0.0-beta.8"
-tauri-plugin-http = "2.0.0-beta.8"
-tauri-plugin-notification = "2.0.0-beta.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.31.0", features = ["bundled"] }
@@ -25,3 +20,13 @@ chrono = { version = "0.4.38", features = ["serde"] }
 tokio = { version = "1.38.0", features = ["full"] }
 quick-xml = { version = "0.36.0", features = ["serialize", "tokio"] }
 crc32fast = "1.4.0"
+
+# Aligned with JS @tauri-apps/api
+tauri = { version = "2.0.0-beta.13", features = [] }
+
+# Aligned with JS plugins
+tauri-plugin-dialog = { version = "2.0.0-beta.8" }
+tauri-plugin-fs = { version = "2.0.0-beta.8" }
+tauri-plugin-http = { version = "2.0.0-beta.8" }
+tauri-plugin-notification = { version = "2.0.0-beta.8" }
+tauri-plugin-shell = { version = "2.0.0-beta.8" }
