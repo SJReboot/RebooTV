@@ -88,10 +88,10 @@ export class IptvService {
   readonly seriesSortOrder = signal<SortOrder>('default');
 
   // --- COMPUTED SIGNALS ---
-  readonly hasPlaylists = computed(() => this.playlists().length > 0);
-  readonly activePlaylists = computed(() => this.playlists().filter(p => p.isActive));
-  readonly playlistsInError = computed(() => this.playlists().filter(p => p.status === 'error'));
-  readonly playlistsLoading = computed(() => this.playlists().filter(p => p.status === 'loading'));
+  readonly hasPlaylists = computed(() => (this.playlists() || []).length > 0);
+  readonly activePlaylists = computed(() => (this.playlists() || []).filter(p => p.isActive));
+  readonly playlistsInError = computed(() => (this.playlists() || []).filter(p => p.status === 'error'));
+  readonly playlistsLoading = computed(() => (this.playlists() || []).filter(p => p.status === 'loading'));
 
   readonly categoriesForActivePlaylist = computed(() => {
     const activePls = this.activePlaylists();
