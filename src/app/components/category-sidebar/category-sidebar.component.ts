@@ -8,7 +8,10 @@ import { Category } from '../../models/iptv.models';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <aside class="w-72 bg-gray-800/50 flex flex-col flex-shrink-0 p-4 border-r border-gray-700/50">
+    <!-- Added h-full and overflow-hidden to the aside tag -->
+    <aside class="w-72 h-full bg-gray-800/50 flex flex-col flex-shrink-0 p-4 border-r border-gray-700/50 overflow-hidden">
+      
+      <!-- Header Section -->
       <div class="flex-shrink-0">
         <div class="flex items-center justify-between mb-2 px-2">
           <h3 class="text-lg font-semibold text-gray-300">{{ isMassEditing() ? 'Edit Categories' : (showHiddenCategories() ? 'Hidden Categories' : 'Categories') }}</h3>
@@ -40,8 +43,9 @@ import { Category } from '../../models/iptv.models';
         </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto relative -mr-4 pr-4">
-        <ul class="space-y-1">
+      <!-- List Section -->
+      <div class="flex-1 overflow-y-auto relative -mr-4 pr-4 custom-scrollbar">
+        <ul class="space-y-1 pb-2">
           <li>
             <a
               class="flex items-center p-2 rounded-md cursor-pointer transition-colors duration-150 text-sm"

@@ -29,20 +29,31 @@ import { IptvService } from '../../services/iptv.service';
         </div>
       }
 
-      <div class="flex-shrink-0 w-16 h-16 mr-4 relative bg-gray-700 rounded-md">
+      <!-- Logo Container -->
+      <div class="flex-shrink-0 w-16 h-16 mr-4 relative bg-gray-700 rounded-md flex items-center justify-center overflow-hidden">
         @if (isImageLoading()) {
             <div class="absolute inset-0 bg-gray-700 animate-pulse rounded-md"></div>
         }
-        <img 
-          [ngSrc]="channel().logoUrl" 
-          [priority]="priority()" 
-          width="64" 
-          height="64" 
-          [alt]="channel().name + ' logo'" 
-          class="rounded-md object-cover w-full h-full transition-opacity duration-300"
-          [class.opacity-0]="isImageLoading()"
-          (load)="isImageLoading.set(false)"
-          (error)="isImageLoading.set(false)">
+        
+        <!-- FIX: Only render NgOptimizedImage if URL exists -->
+        @if (channel().logoUrl) {
+            <img 
+              [ngSrc]="channel().logoUrl" 
+              [priority]="priority()" 
+              width="64" 
+              height="64" 
+              [alt]="channel().name + ' logo'" 
+              class="rounded-md object-contain w-full h-full p-1 transition-opacity duration-300"
+              [class.opacity-0]="isImageLoading()"
+              (load)="isImageLoading.set(false)"
+              (error)="isImageLoading.set(false)">
+        } @else {
+            <!-- Fallback Icon if no logo -->
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-gray-500">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 20.25h12m-7.5-3.75v3.75m3.75-3.75v3.75m-7.5-12v1.5m3.75-1.5v1.5m7.5-1.5v1.5m3.75-1.5v1.5M3 13.5h18M3 7.5h18M3 16.5h18m-18-9h18" />
+            </svg>
+        }
+
         @if (!isMassEditing()) {
           <div 
             (click)="onPlayButton($event)"
@@ -54,6 +65,7 @@ import { IptvService } from '../../services/iptv.service';
           </div>
         }
       </div>
+
       <div class="flex-1 min-w-0">
         <h4 class="text-md font-semibold text-gray-100 truncate">{{ channel().name }}</h4>
         @if (currentProgram() || nextProgram()) {
@@ -69,7 +81,6 @@ import { IptvService } from '../../services/iptv.service';
                   </p>
                 </div>
               } @else {
-                <!-- Placeholder to keep the 'Up next' on the right -->
                 <div></div>
               }
 
@@ -116,6 +127,7 @@ import { IptvService } from '../../services/iptv.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChannelCardComponent {
+    // ... (Class logic remains exactly the same) ...
   iptvService = inject(IptvService);
   channel = input.required<Channel>();
   priority = input<boolean>(false);
@@ -150,15 +162,12 @@ export class ChannelCardComponent {
     const now = this.iptvService.now();
     const currentProg = this.currentProgram();
 
-    // Sort EPG entries by start time to ensure we get the correct next one
     const sortedEpg = [...channel.epg].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
     
     if (currentProg) {
         const currentProgramEndTime = new Date(currentProg.endTime).getTime();
-        // Find the first program that starts at or after the current one ends.
         return sortedEpg.find(p => new Date(p.startTime).getTime() >= currentProgramEndTime);
     } else {
-        // If there's no current program, find the first program that starts after now.
         return sortedEpg.find(p => new Date(p.startTime).getTime() > now.getTime());
     }
   });

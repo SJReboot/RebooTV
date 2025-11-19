@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, output, signal, effect } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, output, signal, effect, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IptvService, SortOrder } from '../../services/iptv.service';
 import { Channel } from '../../models/iptv.models';
@@ -88,7 +88,8 @@ const PAGE_SIZE = 50;
             </div>
         }
 
-        @if (isLoading() && channels().items.length > 0) {
+        <!-- FIX: Added '&& channels().hasMore' to prevent infinite spinner -->
+        @if (isLoading() && channels().items.length > 0 && channels().hasMore) {
           <div class="col-span-full text-center p-4">
               <div class="flex justify-center items-center gap-2 text-gray-400">
                 <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -108,7 +109,8 @@ const PAGE_SIZE = 50;
       <!-- Mass Action Footer -->
       @if (isMassEditing()) {
         <div class="flex-shrink-0 bg-gray-900/80 backdrop-blur-sm px-6 py-3 border-t border-gray-700/50">
-          <div class="flex items-center justify-between text-sm mb-2">
+          <!-- (Footer content remains unchanged) -->
+           <div class="flex items-center justify-between text-sm mb-2">
               <span class="font-semibold">{{ selectedForEdit().size }} selected</span>
               <div>
                 <button (click)="selectAll()" class="ml-2 text-sky-400 hover:underline disabled:text-gray-500 disabled:no-underline" [disabled]="channels().items.length === 0">All</button>
@@ -117,14 +119,10 @@ const PAGE_SIZE = 50;
               </div>
           </div>
           <div class="flex items-center gap-2 justify-center">
-              <button (click)="onMassFavorite(true)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Add to Favorites">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-yellow-400"><path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.006Z" clip-rule="evenodd" /></svg>
-              </button>
-              <button (click)="onMassFavorite(false)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Remove from Favorites">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.321l5.587.812a.562.562 0 0 1 .31.956l-4.048 3.945a.563.563 0 0 0-.162.498l.956 5.565a.563.563 0 0 1-.815.592L12 18.348a.563.563 0 0 0-.522 0l-4.994 2.625a.563.563 0 0 1-.815-.592l.956-5.565a.563.563 0 0 0-.162-.498L2.593 10.7a.562.562 0 0 1 .31-.956l5.587-.812a.563.563 0 0 0 .475-.321L11.48 3.5Z" /></svg>
-              </button>
-              <button (click)="onMassVisibility(true)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Hide Selected"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.243 4.243L6.228 6.228" /></svg></button>
-              <button (click)="onMassVisibility(false)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Unhide Selected"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg></button>
+            <button (click)="onMassFavorite(true)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Add to Favorites"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-yellow-400"><path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.006Z" clip-rule="evenodd" /></svg></button>
+            <button (click)="onMassFavorite(false)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Remove from Favorites"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.321l5.587.812a.562.562 0 0 1 .31.956l-4.048 3.945a.563.563 0 0 0-.162.498l.956 5.565a.563.563 0 0 1-.815.592L12 18.348a.563.563 0 0 0-.522 0l-4.994 2.625a.563.563 0 0 1-.815-.592l.956-5.565a.563.563 0 0 0-.162-.498L2.593 10.7a.562.562 0 0 1 .31-.956l5.587-.812a.563.563 0 0 0 .475-.321L11.48 3.5Z" /></svg></button>
+            <button (click)="onMassVisibility(true)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Hide Selected"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.243 4.243L6.228 6.228" /></svg></button>
+            <button (click)="onMassVisibility(false)" [disabled]="selectedForEdit().size === 0" class="p-2 flex-1 justify-center flex rounded-lg bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed" title="Unhide Selected"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg></button>
           </div>
         </div>
       }
@@ -137,7 +135,7 @@ export class RecentlyWatchedComponent {
   playChannel = output<Channel>();
   navigateToPlaylists = output();
   
-  channels = this.iptvService.channels;
+  channels = this.iptvService.recentChannels;
   isLoading = this.iptvService.channelsLoading;
   error = this.iptvService.channelsError;
   
@@ -146,22 +144,26 @@ export class RecentlyWatchedComponent {
   private currentPage = signal(1);
 
   constructor() {
+    
     effect(() => {
         const initialRefreshComplete = this.iptvService.initialRefreshComplete();
-        // When filters change, reset and fetch the first page
+        
         this.iptvService.selectedCategoryId();
         this.iptvService.searchTerm();
         this.iptvService.channelSortOrder();
         this.iptvService.showHiddenChannels();
 
         if (initialRefreshComplete) {
+            // Force fetch (false, true) to override any lingering loading state
             this.fetchData(false);
         }
     }, { allowSignalWrites: true });
   }
 
   fetchData(loadMore: boolean) {
-    if (this.isLoading()) return;
+    // --- FIX: Allow initial fetch even if previously 'loading' (due to view switch) ---
+    // Only block if it's a 'loadMore' operation to prevent infinite scroll spam
+    if (loadMore && this.isLoading()) return;
 
     if (loadMore) {
       this.currentPage.update(p => p + 1);
@@ -192,8 +194,8 @@ export class RecentlyWatchedComponent {
 
   onScroll(event: Event) {
     const element = event.target as HTMLElement;
-    // Load more when the user is 500px away from the bottom
     if (element.scrollHeight - element.scrollTop - element.clientHeight < 500) {
+        // Safety check: only load if backend says there is more
         if (!this.isLoading() && this.channels().hasMore) {
             this.loadMore();
         }

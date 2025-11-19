@@ -1,6 +1,7 @@
-import { Component, ChangeDetectionStrategy, inject, output, effect, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, output, effect, signal, untracked, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IptvService, SortOrder } from '../../services/iptv.service';
+import { TauriService } from '../../services/tauri.service'; // <--- Imported
 import { Channel } from '../../models/iptv.models';
 import { ChannelCardComponent } from '../channel-card/channel-card.component';
 import { StatusBannerComponent } from '../status-banner/status-banner.component';
@@ -47,7 +48,7 @@ const PAGE_SIZE = 50;
     </div>
     
     <!-- Channel List -->
-    <div class="flex-1 overflow-y-auto px-6" (scroll)="onScroll($event)">
+    <div class="flex-1 overflow-y-auto px-6" (scroll)="onScroll($event)" #channelList>
       @if (channels().items.length > 0) {
         <div class="grid grid-cols-1 gap-4 pt-4 pb-6">
           @for (channel of channels().items; track channel.id; let i = $index) {
@@ -58,7 +59,7 @@ const PAGE_SIZE = 50;
               [isMassEditing]="isMassEditing()"
               [isMassSelected]="selectedForEdit().has(channel.id)"
               (select)="iptvService.selectChannel($event)"
-              (play)="playChannel.emit($event)"
+              (play)="onPlayChannel($event)" 
               (toggleFavorite)="iptvService.toggleFavorite($event)"
               (toggleVisibility)="onToggleChannelVisibility($event)"
               (massSelectToggle)="onMassSelectToggle($event)"
@@ -134,8 +135,11 @@ const PAGE_SIZE = 50;
 })
 export class LiveTvComponent {
   iptvService = inject(IptvService);
-  playChannel = output<Channel>();
+  tauriService = inject(TauriService); // <--- Inject Service
+  
   navigateToPlaylists = output();
+
+  @ViewChild('channelList') channelList!: ElementRef<HTMLElement>;
 
   channels = this.iptvService.channels;
   isLoading = this.iptvService.channelsLoading;
@@ -147,41 +151,62 @@ export class LiveTvComponent {
 
   constructor() {
     effect(() => {
-        // Create dependencies on the signals that should trigger a refetch.
         const initialRefreshComplete = this.iptvService.initialRefreshComplete();
         this.iptvService.selectedCategoryId();
         this.iptvService.searchTerm();
         this.iptvService.channelSortOrder();
         this.iptvService.showHiddenChannels();
 
-        // The key fix: only fetch data if the initial, critical refresh is complete.
-        if (initialRefreshComplete) {
-          this.fetchData(false); // `false` means don't load more, but reset.
-        }
+        untracked(() => {
+            if (initialRefreshComplete) {
+                this.fetchData(false);
+            }
+        });
     }, { allowSignalWrites: true });
   }
 
+  // --- NEW: Play Handler ---
+  onPlayChannel(channel: Channel) {
+    console.log('[LiveTv] Playing channel via MPV:', channel.name);
+    
+    // 1. Track History
+    this.iptvService.addToRecentlyWatched(channel);
+
+    // 2. Launch Player
+    this.tauriService.playStream(channel.streamUrl)
+      .catch(err => console.error('[LiveTv] Failed to launch player:', err));
+  }
+
   fetchData(loadMore: boolean) {
-    if (this.isLoading()) return;
+    if (this.isLoading()) {
+        return;
+    }
 
     if (loadMore) {
       this.currentPage.update(p => p + 1);
     } else {
       this.currentPage.set(1);
+      if (this.channelList?.nativeElement) {
+        this.channelList.nativeElement.scrollTop = 0;
+      }
     }
     
     const sort = this.iptvService.channelSortOrder();
+    const categoryFilter = this.iptvService.selectedCategoryId();
+
     const options = {
         page: this.currentPage(),
         pageSize: PAGE_SIZE,
         searchTerm: this.iptvService.searchTerm(),
-        filter: this.iptvService.selectedCategoryId(),
+        filter: categoryFilter === undefined ? null : categoryFilter,
         sortBy: sort === 'default' ? '' : 'name',
         sortOrder: sort === 'default' ? 'asc' : sort,
         showHidden: this.iptvService.showHiddenChannels(),
     };
     
-    this.iptvService.fetchChannels(options, loadMore);
+    this.iptvService.fetchChannels(options, loadMore)
+        .then(() => {})
+        .catch(err => console.error('[Frontend Debug] fetchChannels failed:', err));
   }
 
   loadMore() {
@@ -190,8 +215,9 @@ export class LiveTvComponent {
 
   onScroll(event: Event) {
     const element = event.target as HTMLElement;
-    // Load more when the user is 500px away from the bottom
-    if (element.scrollHeight - element.scrollTop - element.clientHeight < 500) {
+    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    if (distanceToBottom < 500) {
         if (!this.isLoading() && this.channels().hasMore) {
             this.loadMore();
         }
@@ -210,7 +236,6 @@ export class LiveTvComponent {
   toggleMassEdit() {
     this.isMassEditing.update(v => !v);
     this.deselectAll();
-    // When exiting edit mode, clear any single-channel selection
     if (!this.isMassEditing()) {
       this.iptvService.selectChannel(null); 
     }

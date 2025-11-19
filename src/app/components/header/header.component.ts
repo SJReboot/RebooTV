@@ -1,9 +1,9 @@
-
-
-import { Component, ChangeDetectionStrategy, input, output, signal, ElementRef, inject, effect } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, signal, ElementRef, inject, effect, OnDestroy } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { MainView } from '../../app.component';
 import { IptvService } from '../../services/iptv.service';
+import { Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 @Component({
   selector: 'app-header',
@@ -83,7 +83,7 @@ import { IptvService } from '../../services/iptv.service';
     '(document:click)': 'onClickOutside($event)',
   },
 })
-export class HeaderComponent {
+export class HeaderComponent implements OnDestroy {
   iptvService = inject(IptvService);
   private elementRef = inject(ElementRef);
   currentView = input.required<MainView>();
@@ -103,7 +103,19 @@ export class HeaderComponent {
     { view: 'playlists', label: 'Playlists' },
   ];
 
+  // --- NEW: RxJS Subject for Debounce ---
+  private searchSubject = new Subject<string>();
+  private searchSubscription: Subscription;
+
   constructor() {
+    // --- NEW: Subscribe with Debounce ---
+    this.searchSubscription = this.searchSubject.pipe(
+      debounceTime(300), // Wait 300ms
+      distinctUntilChanged()
+    ).subscribe(term => {
+      this.iptvService.setSearchTerm(term);
+    });
+
     effect(() => {
       const view = this.currentView();
       switch (view) {
@@ -121,7 +133,7 @@ export class HeaderComponent {
           this.selectedScope.set('Series');
           break;
       }
-    });
+    }, { allowSignalWrites: true });
 
     effect((onCleanup) => {
       const interval = setInterval(() => {
@@ -134,6 +146,10 @@ export class HeaderComponent {
     });
   }
 
+  ngOnDestroy() {
+    this.searchSubscription.unsubscribe();
+  }
+
   onNavigate(view: MainView): void {
     this.iptvService.setSearchTerm(''); // Clear search on navigation
     this.navigate.emit(view);
@@ -141,7 +157,8 @@ export class HeaderComponent {
 
   onSearch(event: Event): void {
     const term = (event.target as HTMLInputElement).value;
-    this.iptvService.setSearchTerm(term);
+    // Send to subject instead of Service directly
+    this.searchSubject.next(term);
   }
 
   toggleDropdown(): void {
@@ -152,7 +169,6 @@ export class HeaderComponent {
     this.selectedScope.set(scope);
     this.isDropdownOpen.set(false);
     
-    // Navigate to the corresponding view when a scope is selected
     switch(scope) {
       case 'Live TV':
         if (this.currentView() !== 'live-tv' && this.currentView() !== 'favorites' && this.currentView() !== 'recently-watched') {

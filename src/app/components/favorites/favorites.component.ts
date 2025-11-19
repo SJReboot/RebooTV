@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, inject, output, effect, signal } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject, output, effect, signal, untracked, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IptvService, SortOrder } from '../../services/iptv.service';
 import { Channel } from '../../models/iptv.models';
@@ -47,7 +47,7 @@ const PAGE_SIZE = 50;
       </div>
 
       <!-- Channel List -->
-      <div class="flex-1 overflow-y-auto px-6" (scroll)="onScroll($event)">
+      <div class="flex-1 overflow-y-auto px-6" (scroll)="onScroll($event)" #channelList>
         @if (channels().items.length > 0) {
           <div class="grid grid-cols-1 gap-4 pt-4 pb-6">
             @for (channel of channels().items; track channel.id; let i = $index) {
@@ -137,7 +137,10 @@ export class FavoritesComponent {
   playChannel = output<Channel>();
   navigateToPlaylists = output();
 
-  channels = this.iptvService.channels;
+  // --- ADDED VIEWCHILD ---
+  @ViewChild('channelList') channelList!: ElementRef<HTMLElement>;
+
+  channels = this.iptvService.favoriteChannels;
   isLoading = this.iptvService.channelsLoading;
   error = this.iptvService.channelsError;
   
@@ -148,15 +151,17 @@ export class FavoritesComponent {
   constructor() {
     effect(() => {
         const initialRefreshComplete = this.iptvService.initialRefreshComplete();
-        // When filters change, reset and fetch the first page
         this.iptvService.selectedCategoryId();
         this.iptvService.searchTerm();
         this.iptvService.channelSortOrder();
         this.iptvService.showHiddenChannels();
         
-        if (initialRefreshComplete) {
-            this.fetchData(false);
-        }
+        // --- ADDED UNTRACKED ---
+        untracked(() => {
+            if (initialRefreshComplete) {
+                this.fetchData(false);
+            }
+        });
     }, { allowSignalWrites: true });
   }
 
@@ -167,9 +172,15 @@ export class FavoritesComponent {
       this.currentPage.update(p => p + 1);
     } else {
       this.currentPage.set(1);
+      // --- ADDED SCROLL RESET ---
+      if (this.channelList?.nativeElement) {
+        this.channelList.nativeElement.scrollTop = 0;
+      }
     }
 
     const sort = this.iptvService.channelSortOrder();
+    // Note: The logic here to send { type: 'favorites' } is correct.
+    // It works now because we updated main.rs to parse it.
     const options = {
         page: this.currentPage(),
         pageSize: PAGE_SIZE,
@@ -192,7 +203,6 @@ export class FavoritesComponent {
 
   onScroll(event: Event) {
     const element = event.target as HTMLElement;
-    // Load more when the user is 500px away from the bottom
     if (element.scrollHeight - element.scrollTop - element.clientHeight < 500) {
         if (!this.isLoading() && this.channels().hasMore) {
             this.loadMore();

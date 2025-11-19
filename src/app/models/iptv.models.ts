@@ -30,7 +30,7 @@ export interface Channel {
   streamUrl: string;
   epg: EpgEntry[];
   category: string;
-  categoryId: number;
+  categoryId: number | null;
   isFavorite: boolean;
   isHidden: boolean;
 }

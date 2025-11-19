@@ -19,7 +19,8 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": ["default"]
     }
   },
   "bundle": {
@@ -28,31 +29,6 @@
     "targets": "all"
   },
   "plugins": {
-    "notification": {
-      "all": true
-    },
-    "dialog": {
-      "all": true
-    },
-    "protocol": {
-      "all": true
-    },
-    "shell": {
-      "all": false,
-      "sidecar": true,
-      "scope": [
-        {
-          "name": "mpv",
-          "cmd": "binaries/mpv",
-          "args": true
-        }
-      ]
-    },
-    "fs": {
-      "all": true
-    },
-    "http": {
-      "all": true
-    }
+
   }
 }

@@ -17,7 +17,25 @@ import { NotificationService } from '../../services/notification.service';
         <div class="p-4 flex-shrink-0">
           <div class="flex items-center justify-between">
             <div class="flex items-center min-w-0">
-              <img [ngSrc]="channel.logoUrl" priority width="64" height="64" [alt]="channel.name + ' logo'" class="rounded-md object-cover w-16 h-16 flex-shrink-0">
+              
+              <!-- Logo Container -->
+              <div class="w-16 h-16 flex-shrink-0 bg-gray-700 rounded-md flex items-center justify-center overflow-hidden">
+                @if (channel.logoUrl) {
+                  <img 
+                    [ngSrc]="channel.logoUrl" 
+                    priority 
+                    width="64" 
+                    height="64" 
+                    [alt]="channel.name + ' logo'" 
+                    class="rounded-md object-contain w-full h-full p-1">
+                } @else {
+                  <!-- Fallback Icon -->
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-gray-500">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 20.25h12m-7.5-3.75v3.75m3.75-3.75v3.75m-7.5-12v1.5m3.75-1.5v1.5m7.5-1.5v1.5m3.75-1.5v1.5M3 13.5h18M3 7.5h18M3 16.5h18m-18-9h18" />
+                  </svg>
+                }
+              </div>
+
               <h3 class="text-lg font-bold text-gray-100 ml-4 truncate">{{ channel.name }}</h3>
             </div>
             <button (click)="onClose()" class="p-2 rounded-full hover:bg-gray-700 ml-2 flex-shrink-0" title="Close details">
@@ -111,7 +129,7 @@ export class ChannelDetailsSidebarComponent {
   notificationService = inject(NotificationService);
   elementRef = inject(ElementRef);
   
-  playChannel = output<Channel>();
+  // Note: playChannel output removed as it's now handled internally
   notificationMenuOpenFor = signal<number | null>(null);
   selectedChannel = this.iptvService.selectedChannel;
 
@@ -145,8 +163,16 @@ export class ChannelDetailsSidebarComponent {
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   });
 
+  // --- UPDATED: Play Handler ---
   onPlay(channel: Channel): void {
-    this.playChannel.emit(channel);
+    console.log('[Sidebar] Playing channel via MPV:', channel.name);
+    
+    // 1. Track History
+    this.iptvService.addToRecentlyWatched(channel);
+
+    // 2. Launch Player
+    this.tauriService.playStream(channel.streamUrl)
+      .catch(err => console.error('[Sidebar] Failed to launch player:', err));
   }
   
   onToggleFavorite(channel: Channel): void {

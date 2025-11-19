@@ -38,6 +38,14 @@ export class TauriService {
     return await listen(event, zonedHandler);
   }
 
+  /**
+   * Launches the MPV sidecar player with the given stream URL.
+   * Rust backend handles arguments like fullscreen (--fs).
+   */
+  async playStream(url: string): Promise<void> {
+    return this.invoke('play_stream', { url });
+  }
+
   async scheduleNotification(title: string, body: string, scheduleAt: number): Promise<void> {
     return this.invoke('schedule_notification', { title, body, scheduleAt });
   }

@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: Add global styles if needed, but these 3 are required */
+html, body {
+    height: 100%;
+    margin: 0;
+    background-color: #0f172a; /* Dark blue background */
+    color: white;
+}
